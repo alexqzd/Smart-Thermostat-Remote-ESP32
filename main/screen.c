@@ -59,6 +59,7 @@ void qmsd_rgb_init(esp_lcd_rgb_panel_config_t *panel_config)
     lv_disp_draw_buf_init(&draw_buf, buf1, buf2, buffer_size);
 
     lv_disp_drv_init(&disp_drv);         
+	disp_drv.full_refresh = 1;
     disp_drv.flush_cb = __qsmd_rgb_disp_flush;
     disp_drv.draw_buf = &draw_buf;
     disp_drv.hor_res = panel_config->timings.h_res;
