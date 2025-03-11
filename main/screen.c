@@ -25,46 +25,23 @@
 #define ECO_O(y) (y>0)? -1:1
 #define ECO_STEP(x) x? ECO_O(x):0
 
+#define MY_DISP_HOR_RES 480
+#define MY_DISP_VER_RES 480
+
 static button_t *g_btn;
 
 static esp_lcd_panel_handle_t g_panel_handle = NULL;
 
-static void __qsmd_rgb_disp_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p)
+//(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p)
+static void __qsmd_rgb_disp_flush(lv_display_t * display, const lv_area_t * area, uint8_t * px_map)
 {
     int offsetx1 = area->x1;
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
     int offsety2 = area->y2;
 
-    esp_lcd_panel_draw_bitmap(g_panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_p);
-    lv_disp_flush_ready(disp_drv);
-}
-
-void qmsd_rgb_init(esp_lcd_rgb_panel_config_t *panel_config)
-{
-    static lv_disp_drv_t disp_drv;
-    int buffer_size;
-    void *buf1 = NULL;
-    void *buf2 = NULL;
-	static lv_disp_draw_buf_t draw_buf;
-
-    lv_init();
-
-    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(panel_config, &g_panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(g_panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_init(g_panel_handle));
-
-    buffer_size = panel_config->timings.h_res * panel_config->timings.v_res;
-    esp_lcd_rgb_panel_get_frame_buffer(g_panel_handle, 2, &buf1, &buf2);
-    lv_disp_draw_buf_init(&draw_buf, buf1, buf2, buffer_size);
-
-    lv_disp_drv_init(&disp_drv);         
-	disp_drv.full_refresh = 1;
-    disp_drv.flush_cb = __qsmd_rgb_disp_flush;
-    disp_drv.draw_buf = &draw_buf;
-    disp_drv.hor_res = panel_config->timings.h_res;
-    disp_drv.ver_res = panel_config->timings.v_res;
-    lv_disp_drv_register(&disp_drv);
+    esp_lcd_panel_draw_bitmap(g_panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, px_map);
+    lv_display_flush_ready(display);
 }
 
 static spi_device_handle_t g_screen_spi;
@@ -393,7 +370,7 @@ void qmsd_rgb_spi_init() {
 	spi_bus_free(SPI2_HOST);
 }
 
-void __qmsd_encoder_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
+void __qmsd_encoder_read(lv_indev_t * indev, lv_indev_data_t * data)
 {
     static int16_t cont_last = 0;
     int16_t cont_now = mt8901_get_count();
@@ -406,77 +383,118 @@ void __qmsd_encoder_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
     }
 }
 
-void __qsmd_encoder_init(void)
+lv_indev_t *__qsmd_encoder_init(void)
 {
-    static lv_indev_drv_t indev_drv;
+    lv_indev_t * indev = lv_indev_create();        /* Create input device connected to Default Display. */
 
-    g_btn = button_attch(3, 1, 10);
-    mt8901_init(5,6);
+    g_btn = button_attch(BTN_PIN, 0, 10);
+    mt8901_init(ENCODER_A_PIN, ENCODER_B_PIN);
 
-    lv_indev_drv_init(&indev_drv);
-    indev_drv.read_cb = __qmsd_encoder_read;
-    indev_drv.type = LV_INDEV_TYPE_ENCODER;
-    lv_indev_drv_register(&indev_drv);
+	lv_indev_set_type(indev, LV_INDEV_TYPE_ENCODER);
+	lv_indev_set_read_cb(indev, __qmsd_encoder_read);
+    return indev;
 }
 
-void screen_init(void) {
-    gpio_config_t bk_gpio_config = {
-        .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = 1ULL << LCD_PIN_BK_LIGHT
-    };
-    // Initialize the GPIO of backlight
-    ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
+static lv_indev_t *encoder_indev;
 
-    ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_BK_LIGHT, LCD_BK_LIGHT_OFF_LEVEL));
+lv_indev_t* get_encoder_indev(void) {
+    return encoder_indev;
+}
 
-    qmsd_rgb_spi_init();
+lv_display_t* screen_init(void) {
 
-    esp_lcd_rgb_panel_config_t panel_config = {
-        .data_width = 16,
-        .psram_trans_align = 64,
-        .pclk_gpio_num = LCD_PCLK_GPIO,
-        .vsync_gpio_num = LCD_VSYNC_GPIO,
-        .hsync_gpio_num = LCD_HSYNC_GPIO,
-        .de_gpio_num = LCD_DE_GPIO,
-        .disp_gpio_num = LCD_DISP_EN_GPIO,
-        .data_gpio_nums = {
-            LCD_DATA0_GPIO,
-            LCD_DATA1_GPIO,
-            LCD_DATA2_GPIO,
-            LCD_DATA3_GPIO,
-            LCD_DATA4_GPIO,
-            LCD_DATA5_GPIO,
-            LCD_DATA6_GPIO,
-            LCD_DATA7_GPIO,
-            LCD_DATA8_GPIO,
-            LCD_DATA9_GPIO,
-            LCD_DATA10_GPIO,
-            LCD_DATA11_GPIO,
-            LCD_DATA12_GPIO,
-            LCD_DATA13_GPIO,
-            LCD_DATA14_GPIO,
-            LCD_DATA15_GPIO,
-        },
-        .timings = {
-            .pclk_hz = 15000000,
-            .h_res = 480,
-            .v_res = 480,
-            .hsync_pulse_width = 10,
-            .hsync_back_porch = 10,
-            .hsync_front_porch = 10, 
-            .vsync_pulse_width = 2,
-            .vsync_back_porch = 12,
-            .vsync_front_porch = 14,
-        },
-        .flags.fb_in_psram = 1,
-        .flags.double_fb = 1,
-        .flags.refresh_on_demand = 0,   // Mannually control refresh operation
-        .bounce_buffer_size_px = 0,
-        .clk_src = LCD_CLK_SRC_PLL160M,
-    };
+	lv_init();
 
-    qmsd_rgb_init(&panel_config);
-	__qsmd_encoder_init();
+	gpio_config_t bk_gpio_config = {
+		.mode = GPIO_MODE_OUTPUT,
+		.pin_bit_mask = 1ULL << LCD_PIN_BK_LIGHT
+	};
+	// Initialize the GPIO of backlight
+	ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
 
-    ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_BK_LIGHT, LCD_BK_LIGHT_ON_LEVEL));
+	ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_BK_LIGHT, LCD_BK_LIGHT_OFF_LEVEL));
+
+	qmsd_rgb_spi_init();
+
+	esp_lcd_rgb_panel_config_t panel_config = {
+		.data_width = 16,
+		.psram_trans_align = 64,
+		.pclk_gpio_num = LCD_PCLK_GPIO,
+		.vsync_gpio_num = LCD_VSYNC_GPIO,
+		.hsync_gpio_num = LCD_HSYNC_GPIO,
+		.de_gpio_num = LCD_DE_GPIO,
+		.disp_gpio_num = LCD_DISP_EN_GPIO,
+		.data_gpio_nums = {
+			LCD_DATA0_GPIO,
+			LCD_DATA1_GPIO,
+			LCD_DATA2_GPIO,
+			LCD_DATA3_GPIO,
+			LCD_DATA4_GPIO,
+			LCD_DATA5_GPIO,
+			LCD_DATA6_GPIO,
+			LCD_DATA7_GPIO,
+			LCD_DATA8_GPIO,
+			LCD_DATA9_GPIO,
+			LCD_DATA10_GPIO,
+			LCD_DATA11_GPIO,
+			LCD_DATA12_GPIO,
+			LCD_DATA13_GPIO,
+			LCD_DATA14_GPIO,
+			LCD_DATA15_GPIO,
+		},
+		.timings = {
+			.pclk_hz = 15000000,
+			.h_res = 480,
+			.v_res = 480,
+			.hsync_pulse_width = 10,
+			.hsync_back_porch = 10,
+			.hsync_front_porch = 10, 
+			.vsync_pulse_width = 2,
+			.vsync_back_porch = 12,
+			.vsync_front_porch = 14,
+		},
+		.flags.fb_in_psram = 1,
+		.flags.double_fb = 1,
+		.flags.refresh_on_demand = 0,   // Mannually control refresh operation
+		.bounce_buffer_size_px = 0,
+		.clk_src = LCD_CLK_SRC_PLL160M,
+	};
+
+
+
+
+
+    int buffer_size;
+    void *buf1 = NULL;
+    void *buf2 = NULL;
+
+    lv_init();
+
+    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &g_panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(g_panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(g_panel_handle));
+
+	
+
+	lv_display_t * display1 = lv_display_create(MY_DISP_HOR_RES, MY_DISP_VER_RES);
+
+
+
+
+	ESP_LOGI(TAG, "Use frame buffers as LVGL draw buffers");
+    ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(g_panel_handle, 2, &buf1, &buf2));
+    // set LVGL draw buffers and direct mode
+    lv_display_set_buffers(display1, buf1, buf2, MY_DISP_HOR_RES * MY_DISP_VER_RES * 3, LV_DISPLAY_RENDER_MODE_DIRECT);
+
+
+	
+	lv_display_set_flush_cb(display1, __qsmd_rgb_disp_flush);
+
+	encoder_indev = __qsmd_encoder_init();
+
+	ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_BK_LIGHT, LCD_BK_LIGHT_ON_LEVEL));
+
+	return display1;
+
+
 }
