@@ -484,7 +484,7 @@ lv_display_t* screen_init(void) {
 	ESP_LOGI(TAG, "Use frame buffers as LVGL draw buffers");
     ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(g_panel_handle, 2, &buf1, &buf2));
     // set LVGL draw buffers and direct mode
-    lv_display_set_buffers(display1, buf1, buf2, MY_DISP_HOR_RES * MY_DISP_VER_RES * 3, LV_DISPLAY_RENDER_MODE_DIRECT);
+    lv_display_set_buffers(display1, buf1, buf2, MY_DISP_HOR_RES * MY_DISP_VER_RES * 3, LV_DISP_RENDER_MODE_FULL);
 
 
 	
